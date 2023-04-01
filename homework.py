@@ -2,7 +2,7 @@ import logging
 import os
 import sys
 import time
-
+import exceptions
 import requests
 import telegram
 from dotenv import load_dotenv
@@ -46,6 +46,7 @@ def send_message(bot, message):
         logger.debug('Сообщение отправлено.')
     except telegram.error.TelegramError:
         logger.error('Не удалось отправить сообщение.')
+        raise exceptions.ImportantException('Не удалось отправить сообщение.')
 
 
 def get_api_answer(timestamp):
@@ -60,12 +61,11 @@ def get_api_answer(timestamp):
         if response.status_code == 200:
             return response.json()
         else:
-            logger.error(
-                f'Ресурс {ENDPOINT} не доступен. Код ответа API: {status}'
-            )
-            raise AssertionError
-    except RequestException:
-        logger.error(f'Ошибка при запросе к ресурсу. {ENDPOINT}')
+            raise exceptions.LightException(
+                f'Ресурс {ENDPOINT} не доступен. Код ответа API: {status}')
+    except RequestException as e:
+        raise exceptions.ImportantException(
+            f'Ошибка при запросе к ресурсу. {ENDPOINT}', e)
 
 
 def check_response(response):
@@ -78,7 +78,8 @@ def check_response(response):
         return homework
     except TypeError():
         logger.error('Ответ API не соответствует ожтдаемому.')
-        raise TypeError('Данные не получены в формате словаря')
+        raise exceptions.ImportantException(
+            'Ответ API не соответствует ожидаемому.')
 
 
 def parse_status(homework):
@@ -87,12 +88,11 @@ def parse_status(homework):
     """
     homework_name = homework.get('homework_name')
     if 'homework_name' not in homework:
-        logger.error(f'отсутствует или пустое поле: {homework_name}')
-        raise KeyError
+        raise exceptions.LightException(
+            f'отсутствует или пустое поле: {homework_name}')
     status = homework.get('status')
     if status not in HOMEWORK_VERDICTS:
-        logger.error(f'Неизвестный статус: {status}')
-        raise KeyError
+        raise exceptions.LightException(f'Неизвестный статус: {status}')
     verdict = HOMEWORK_VERDICTS.get(status)
     return f'Изменился статус проверки работы "{homework_name}". {verdict}'
 
@@ -112,10 +112,13 @@ def main():
             homework = check_response(response)
             message = parse_status(homework)
             send_message(bot, message)
-        except Exception as error:
+        except exceptions.ImportantException as error:
             message = f'Сбой в работе программы: {error}'
             logger.error(message)
             send_message(bot, message)
+        except exceptions.LightException as error:
+            message = f'Сбой в работе программы: {error}'
+            logger.error(message)
         finally:
             time.sleep(RETRY_PERIOD)
 
